@@ -87,7 +87,7 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink)
 .cal-cell.today .cdate{color:white;background:var(--ink);width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;}
 .cdots{display:flex;flex-wrap:wrap;gap:1px;margin-top:1px;}
 .cdot{width:5px;height:5px;border-radius:50%;}
-.camt{font-size:8px;color:var(--ink2);margin-top:1px;font-weight:600;}
+.camt{font-size:7px;color:var(--ink2);margin-top:1px;font-weight:600;word-break:break-all;}
 
 /* Day detail */
 .day-detail{margin-top:10px;}
@@ -670,7 +670,7 @@ function renderCal(){
       ?`<div class="cdate">${d}</div>`
       :`<div class="cdate ${dow===0?'sun':dow===6?'sat':''}">${d}</div>`;
     const dots=dayTx.slice(0,4).map(t=>`<div class="cdot" style="background:${getCat(t.catId).color}"></div>`).join('');
-    const amtEl=dayTotal>0?`<div class="camt">${dayTotal>=10000?Math.floor(dayTotal/1000)+'k':dayTotal.toLocaleString()}</div>`:'';
+    const amtEl=dayTotal>0?`<div class="camt">${dayTotal.toLocaleString()}</div>`:'';
     cells+=`<div class="cal-cell${isToday?' today':''}${isSel?' sel':''}" onclick="selectDay('${key}')">
       ${dateEl}<div class="cdots">${dots}</div>${amtEl}
     </div>`;
