@@ -291,6 +291,7 @@ body{font-family:'Noto Serif KR',serif;background:var(--cream);color:var(--ink);
 .mo-title{font-family:'Cormorant Garamond',serif;font-size:18px;color:var(--brown-d);margin-bottom:10px;letter-spacing:.05em;}
 .mo-box{background:var(--warm);padding:22px;width:90%;max-width:360px;}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 <!-- 로그인 화면 -->
@@ -326,6 +327,7 @@ body{font-family:'Noto Serif KR',serif;background:var(--cream);color:var(--ink);
     <div class="h-btns">
       <button class="bbtn" onclick="exportData()">📤 백업</button>
       <button class="bbtn" onclick="document.getElementById('importFile').click()">📥 가져오기</button>
+      <button class="bbtn" id="authBtn" onclick="handleAuth()" style="color:var(--gold);">🔑 로그인</button>
       <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
     </div>
   </div>
@@ -651,6 +653,120 @@ function saveAll() {
   save('dn_tasks',      tasks);
   save('dn_habits',     habits);
   save('dn_shortgoals', shortGoals);
+  if (dnUser) syncToSupabase();
+}
+
+// ═══════════════════════════════════
+// SUPABASE 연동
+// ═══════════════════════════════════
+const DN_URL = 'https://rbmawwlrkunkcpewudlk.supabase.co';
+const DN_KEY = 'sb_publishable_en-NH_aB8_Y9s1q3tmnawA_rkcLJVnA';
+let dnSb = null;
+let dnUser = null;
+
+window.addEventListener('load', () => {
+  try {
+    dnSb = supabase.createClient(DN_URL, DN_KEY);
+    dnSb.auth.onAuthStateChange(async (event, session) => {
+      dnUser = session?.user || null;
+      updateAuthBtn();
+      if (dnUser) {
+        showToast('로그인됐어요 ✦ 데이터 동기화 중...');
+        await syncFromSupabase();
+      }
+    });
+  } catch(e) { console.error('Supabase 초기화 오류:', e); }
+});
+
+function updateAuthBtn() {
+  const btn = document.getElementById('authBtn');
+  if (!btn) return;
+  if (dnUser) {
+    btn.textContent = '로그아웃';
+    btn.style.color = 'rgba(255,100,100,.8)';
+  } else {
+    btn.textContent = '🔑 로그인';
+    btn.style.color = 'var(--gold)';
+  }
+}
+
+async function handleAuth() {
+  if (!dnSb) { showToast('잠시 후 다시 시도해주세요'); return; }
+  if (dnUser) {
+    await dnSb.auth.signOut();
+    dnUser = null;
+    updateAuthBtn();
+    showToast('로그아웃됐어요');
+  } else {
+    await dnSb.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.href }
+    });
+  }
+}
+
+async function syncFromSupabase() {
+  if (!dnUser || !dnSb) return;
+  const { data: row } = await dnSb
+    .from('dream_note_data')
+    .select('*')
+    .eq('user_id', dnUser.id)
+    .maybeSingle();
+
+  if (!row) {
+    // 서버에 데이터 없으면 로컬 데이터 업로드
+    await syncToSupabase();
+    showToast('데이터를 서버에 저장했어요 ✦');
+    return;
+  }
+
+  // 서버 데이터와 로컬 데이터 합치기
+  // tasks는 날짜별로 합치기
+  const localTasks = load('dn_tasks', {});
+  const mergedTasks = { ...row.tasks };
+  Object.keys(localTasks).forEach(dateKey => {
+    if (!mergedTasks[dateKey]) {
+      mergedTasks[dateKey] = localTasks[dateKey];
+    } else {
+      // 같은 날짜면 완료 안 된 항목 중 서버에 없는 것만 추가
+      const serverIds = new Set([
+        ...(mergedTasks[dateKey].dots||[]).map(t=>t.id),
+        ...(mergedTasks[dateKey].todos||[]).map(t=>t.id)
+      ]);
+      (localTasks[dateKey].dots||[]).forEach(t => { if(!serverIds.has(t.id)) mergedTasks[dateKey].dots.push(t); });
+      (localTasks[dateKey].todos||[]).forEach(t => { if(!serverIds.has(t.id)) mergedTasks[dateKey].todos.push(t); });
+    }
+  });
+
+  if (row.visions)     { visions    = row.visions;     save('dn_visions',    visions); }
+  if (row.gratitude)   { gratitude  = row.gratitude;   save('dn_gratitude',  gratitude); }
+  tasks = mergedTasks; save('dn_tasks', tasks);
+  if (row.habits)      { habits     = row.habits;      save('dn_habits',     habits); }
+  if (row.short_goals) { shortGoals = row.short_goals; save('dn_shortgoals', shortGoals); }
+
+  showToast('동기화 완료 ✦');
+  renderHome();
+  await syncToSupabase(); // 합친 데이터 서버에 저장
+}
+
+async function syncToSupabase() {
+  if (!dnUser || !dnSb) return;
+  const { data: existing } = await dnSb
+    .from('dream_note_data')
+    .select('id')
+    .eq('user_id', dnUser.id)
+    .maybeSingle();
+  const payload = {
+    user_id: dnUser.id,
+    visions, gratitude, tasks, habits,
+    short_goals: shortGoals,
+    updated_at: new Date().toISOString()
+  };
+  if (existing) {
+    await dnSb.from('dream_note_data').update(payload).eq('user_id', dnUser.id);
+  } else {
+    await dnSb.from('dream_note_data').insert(payload);
+  }
 }
 
 // ═══════════════════════════════════

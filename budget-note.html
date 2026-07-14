@@ -183,27 +183,8 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink)
 </head>
 <body>
 
-<!-- 로딩 화면 -->
-<div id="loadingScreen" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#F7F5F0;">
-  <div style="font-family:'Playfair Display',serif;font-size:28px;color:#1C1917;margin-bottom:16px;">💰 가계<em style="font-style:italic;color:#B8860B;">부</em></div>
-  <div style="font-size:12px;color:#A8A39D;">잠시만요...</div>
-</div>
-
-<!-- 로그인 화면 -->
-<div id="loginScreen" style="display:none;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#F7F5F0;padding:40px 20px;">
-  <div style="text-align:center;max-width:320px;width:100%;">
-    <div style="font-family:'Playfair Display',serif;font-size:28px;color:#1C1917;margin-bottom:6px;">💰 가계<em style="font-style:italic;color:#B8860B;">부</em></div>
-    <div style="font-size:11px;color:#B8860B;letter-spacing:.15em;margin-bottom:40px;">by @rich_magnets</div>
-    <p style="font-size:13px;color:#6B6560;margin-bottom:30px;line-height:1.6;">로그인하면 어떤 기기에서든<br>데이터가 안전하게 동기화돼요</p>
-    <button onclick="loginWithGoogle()" style="width:100%;padding:14px;background:white;border:1px solid #E8E2D9;cursor:pointer;font-family:'Noto Sans KR',sans-serif;font-size:14px;color:#1C1917;display:flex;align-items:center;justify-content:center;gap:10px;box-shadow:0 2px 8px rgba(0,0,0,.08);">
-      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="20" height="20">
-      Google로 로그인
-    </button>
-  </div>
-</div>
-
 <!-- 앱 본체 -->
-<div id="appContainer" style="display:none;">
+<div id="appContainer" style="display:block;">
 
 <div class="header">
   <div class="header-top">
@@ -215,7 +196,7 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink)
     <div class="hbtns">
       <button class="hbtn" onclick="exportData()">📤 백업</button>
       <button class="hbtn" onclick="document.getElementById('importInput').click()">📥 가져오기</button>
-      <button class="hbtn" onclick="logout()" style="color:rgba(255,100,100,.8);">로그아웃</button>
+      <button class="hbtn" id="bnAuthBtn" onclick="handleBnAuth()" style="color:rgba(201,168,76,.9);">🔑 로그인</button>
       <input type="file" id="importInput" accept=".json" style="display:none" onchange="importData(event)">
     </div>
   </div>
@@ -361,8 +342,22 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--ink)
     <label class="flabel">날짜</label>
     <input class="finput" type="date" id="txDate">
     <label class="flabel">금액</label>
-    <input class="finput" type="number" id="txAmount" placeholder="0">
-    <label class="flabel">내용</label>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input class="finput" type="number" id="txAmount" placeholder="0" style="flex:1;margin-bottom:0;">
+      <button onclick="toggleCalc()" style="flex-shrink:0;padding:8px 12px;background:var(--gold-l);border:none;cursor:pointer;font-size:14px;border-radius:2px;">🧮</button>
+    </div>
+    <!-- 계산기 -->
+    <div id="calcPanel" style="display:none;margin-top:8px;background:#f5f5f5;padding:10px;border-radius:6px;">
+      <div id="calcDisplay" style="text-align:right;font-size:18px;font-weight:600;padding:6px 10px;background:white;margin-bottom:8px;min-height:32px;border:1px solid var(--border);"></div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
+        ${['7','8','9','÷','4','5','6','×','1','2','3','-','0','00','C','+'].map(k=>`
+          <button onclick="calcInput('${k}')" style="padding:10px;font-size:15px;border:1px solid var(--border);background:${['÷','×','-','+'].includes(k)?'var(--gold-l)':'white'};cursor:pointer;">${k}</button>
+        `).join('')}
+        <button onclick="calcInput('←')" style="padding:10px;font-size:15px;border:1px solid var(--border);background:white;cursor:pointer;">←</button>
+        <button onclick="calcInput('=')" colspan="3" style="padding:10px;font-size:15px;border:none;background:var(--ink);color:white;cursor:pointer;grid-column:span 3;">= 적용</button>
+      </div>
+    </div>
+    <label class="flabel" style="margin-top:8px;">내용</label>
     <input class="finput" type="text" id="txMemo" placeholder="예: 마트 장보기">
     <label class="flabel">카테고리</label>
     <div class="cat-grid" id="catSelectGrid"></div>
@@ -416,16 +411,8 @@ try {
 let currentUser = null;
 
 // ── 로그인 UI ──
-function showLoginScreen() {
-  document.getElementById('loadingScreen').style.display = 'none';
-  document.getElementById('appContainer').style.display = 'none';
-  document.getElementById('loginScreen').style.display = 'flex';
-}
-function showAppScreen() {
-  document.getElementById('loadingScreen').style.display = 'none';
-  document.getElementById('loginScreen').style.display = 'none';
-  document.getElementById('appContainer').style.display = 'block';
-}
+function showLoginScreen() {}
+function showAppScreen() {}
 
 async function loginWithGoogle() {
   const { error } = await sb.auth.signInWithOAuth({
@@ -438,8 +425,28 @@ async function loginWithGoogle() {
 async function logout() {
   await sb.auth.signOut();
   currentUser = null;
-  showLoginScreen();
+  updateBnAuthBtn();
   showToast('로그아웃됐어요');
+}
+
+async function handleBnAuth() {
+  if (currentUser) {
+    await logout();
+  } else {
+    await loginWithGoogle();
+  }
+}
+
+function updateBnAuthBtn() {
+  const btn = document.getElementById('bnAuthBtn');
+  if (!btn) return;
+  if (currentUser) {
+    btn.textContent = '로그아웃';
+    btn.style.color = 'rgba(255,100,100,.8)';
+  } else {
+    btn.textContent = '🔑 로그인';
+    btn.style.color = 'rgba(201,168,76,.9)';
+  }
 }
 
 // ── 데이터 불러오기 ──
@@ -663,7 +670,7 @@ function renderCal(){
       ?`<div class="cdate">${d}</div>`
       :`<div class="cdate ${dow===0?'sun':dow===6?'sat':''}">${d}</div>`;
     const dots=dayTx.slice(0,4).map(t=>`<div class="cdot" style="background:${getCat(t.catId).color}"></div>`).join('');
-    const amtEl=dayTotal>0?`<div class="camt">${Math.round(dayTotal/10000)}만</div>`:'';
+    const amtEl=dayTotal>0?`<div class="camt">${dayTotal>=10000?Math.floor(dayTotal/1000)+'k':dayTotal.toLocaleString()}</div>`:'';
     cells+=`<div class="cal-cell${isToday?' today':''}${isSel?' sel':''}" onclick="selectDay('${key}')">
       ${dateEl}<div class="cdots">${dots}</div>${amtEl}
     </div>`;
@@ -699,6 +706,7 @@ function renderDayDetail(){
           <div class="tx-cat">${cat.name}${sub?' · '+sub.name:''}</div>
         </div>
         <div class="tx-amt">${fmt(t.amount)}</div>
+        <button class="tx-del" style="margin-right:2px;color:var(--gold);" onclick="openEditTxModal('${t.id}')">✏️</button>
         <button class="tx-del" onclick="deleteTx('${t.id}')">✕</button>
       </div>`;
     }).join('');
@@ -1075,14 +1083,62 @@ function updateCatBudget(id,val){
 }
 
 // ── TX MODAL ──
-function openTxModal(dateStr){
-  selectedCatId=data.categories[0]?.id||null;
-  selectedSubId=null;
-  document.getElementById('txDate').value=dateStr||dateKey(curYear,curMonth,new Date().getDate());
-  document.getElementById('txAmount').value='';document.getElementById('txMemo').value='';
+// ── 계산기 ──
+let calcExpr = '';
+function toggleCalc() {
+  const p = document.getElementById('calcPanel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  calcExpr = '';
+  document.getElementById('calcDisplay').textContent = '';
+}
+function calcInput(k) {
+  if (k === 'C') { calcExpr = ''; document.getElementById('calcDisplay').textContent = ''; return; }
+  if (k === '←') { calcExpr = calcExpr.slice(0,-1); document.getElementById('calcDisplay').textContent = calcExpr; return; }
+  if (k === '=') {
+    try {
+      const expr = calcExpr.replace(/÷/g,'/').replace(/×/g,'*');
+      const result = Math.round(Function('"use strict";return (' + expr + ')')());
+      document.getElementById('txAmount').value = result;
+      document.getElementById('calcDisplay').textContent = result.toLocaleString() + '원';
+      calcExpr = String(result);
+    } catch { document.getElementById('calcDisplay').textContent = '오류'; }
+    return;
+  }
+  calcExpr += k;
+  document.getElementById('calcDisplay').textContent = calcExpr;
+}
+
+let editTxId = null;
+
+function openTxModal(dateStr) {
+  editTxId = null;
+  document.getElementById('txModalTitle').textContent = '지출 입력';
+  selectedCatId = data.categories[0]?.id || null;
+  selectedSubId = null;
+  document.getElementById('txDate').value = dateStr || dateKey(curYear, curMonth, new Date().getDate());
+  document.getElementById('txAmount').value = '';
+  document.getElementById('txMemo').value = '';
+  document.getElementById('calcPanel').style.display = 'none';
+  calcExpr = '';
   renderCatGrid();
   document.getElementById('txModal').classList.add('open');
-  setTimeout(()=>document.getElementById('txAmount').focus(),100);
+  setTimeout(() => document.getElementById('txAmount').focus(), 100);
+}
+
+function openEditTxModal(txId) {
+  const tx = data.transactions.find(t => t.id === txId);
+  if (!tx) return;
+  editTxId = txId;
+  document.getElementById('txModalTitle').textContent = '지출 수정';
+  selectedCatId = tx.catId;
+  selectedSubId = tx.subId || null;
+  document.getElementById('txDate').value = tx.date;
+  document.getElementById('txAmount').value = tx.amount;
+  document.getElementById('txMemo').value = tx.memo || '';
+  document.getElementById('calcPanel').style.display = 'none';
+  calcExpr = '';
+  renderCatGrid();
+  document.getElementById('txModal').classList.add('open');
 }
 function renderCatGrid(){
   document.getElementById('catSelectGrid').innerHTML=data.categories.map(c=>`
@@ -1113,8 +1169,18 @@ function saveTx(){
   if(!selectedCatId){showToast('카테고리를 선택해주세요');return;}
   const cat=data.categories.find(c=>c.id===selectedCatId);
   if(cat?.subs?.length>0&&!selectedSubId){showToast('세부 항목을 선택해주세요');return;}
-  data.transactions.push({id:'tx'+Date.now(),date,amount,memo,catId:selectedCatId,subId:selectedSubId||null});
-  save();closeModal();selectedDate=date;renderCal();renderFood();showToast('지출이 저장됐어요');
+
+  if(editTxId) {
+    // 수정 모드
+    const idx = data.transactions.findIndex(t=>t.id===editTxId);
+    if(idx>-1) data.transactions[idx]={...data.transactions[idx],date,amount,memo,catId:selectedCatId,subId:selectedSubId||null};
+    editTxId = null;
+    save();closeModal();selectedDate=date;renderCal();renderDayDetail();renderFood();showToast('수정됐어요');
+  } else {
+    // 신규 입력
+    data.transactions.push({id:'tx'+Date.now(),date,amount,memo,catId:selectedCatId,subId:selectedSubId||null});
+    save();closeModal();selectedDate=date;renderCal();renderFood();showToast('지출이 저장됐어요');
+  }
 }
 function deleteTx(id){
   if(!confirm('삭제할까요?'))return;
@@ -1161,44 +1227,68 @@ function clearAll(){
 // ── INIT ──
 async function initApp(user) {
   currentUser = user;
+  updateBnAuthBtn();
 
-  // Supabase에서 데이터 불러오기
+  // 로컬 데이터 확인
+  const local = JSON.parse(localStorage.getItem('bn_data2') || 'null');
+
+  // 백그라운드에서 Supabase 데이터 불러오기
   const remoteData = await loadFromSupabase();
-  if (remoteData) {
+
+  if (remoteData && local) {
+    // 둘 다 있으면 → 트랜잭션은 합치고, 나머지는 서버 우선
+    const mergedTx = [...remoteData.transactions];
+    const remoteIds = new Set(mergedTx.map(t => t.id));
+    local.transactions.forEach(t => { if (!remoteIds.has(t.id)) mergedTx.push(t); });
+    data = { ...remoteData, transactions: mergedTx };
+    showToast('로컬 데이터와 동기화 완료 ✦');
+  } else if (remoteData) {
+    // 서버만 있으면 서버 데이터
     data = remoteData;
-  } else {
-    // 로컬 데이터가 있으면 서버로 마이그레이션
-    const local = JSON.parse(localStorage.getItem('bn_data2') || 'null');
-    if (local) {
-      data = local;
-      await saveToSupabase();
-      showToast('기존 데이터를 서버에 저장했어요 ✅');
-    }
+    showToast('동기화 완료 ✦');
+  } else if (local) {
+    // 로컬만 있으면 로컬 데이터를 서버에 업로드
+    data = local;
+    showToast('데이터를 서버에 저장했어요 ✦');
   }
 
+  localStorage.setItem('bn_data2', JSON.stringify(data));
+  applyDataDefaults();
+  renderApp();
+  if (currentUser) saveToSupabase();
+}
+
+function applyDataDefaults() {
   if (!data.events) data.events = [];
   if (!data.weekBudgets) data.weekBudgets = {};
   if (data.foodCatId === undefined) data.foodCatId = 'c1';
   data.categories.forEach(c => { if (!c.subs) c.subs = []; });
+}
 
+function renderApp() {
   const lbl = `${curYear}년 ${curMonth+1}월`;
   ['monthLabel','monthLabel2','monthLabel3'].forEach(id => {
     const el = document.getElementById(id); if (el) el.textContent = lbl;
   });
   renderCal();
+}
+
+// 앱 시작 - 로그인 없이도 바로 실행
+window.addEventListener('load', () => {
   document.getElementById('txModal').addEventListener('click', function(e) { if(e.target===this) closeModal(); });
   document.getElementById('eventModal').addEventListener('click', function(e) { if(e.target===this) closeEventModal(); });
 
-  showAppScreen();
-}
+  // 로컬 데이터로 즉시 앱 시작
+  applyDataDefaults();
+  renderApp();
 
-// 인증 상태 감지 (자동 로그인 포함)
-window.addEventListener('load', () => {
+  // 백그라운드에서 Supabase 세션 확인
   sb.auth.onAuthStateChange(async (event, session) => {
     if (session?.user) {
       await initApp(session.user);
     } else {
-      showLoginScreen();
+      currentUser = null;
+      updateBnAuthBtn();
     }
   });
 });
